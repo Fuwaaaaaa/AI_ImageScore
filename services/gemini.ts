@@ -124,8 +124,9 @@ export const analyzeImage = async (base64Image: string): Promise<AnalysisResult>
     const result = JSON.parse(text) as AnalysisResult;
     return result;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Analysis failed:", error);
+    // Throw the error object directly so the caller can inspect it
     throw error;
   }
 };

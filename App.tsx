@@ -105,9 +105,18 @@ const App: React.FC = () => {
       // Create a thumbnail and save to history
       createThumbnailAndSave(image, data);
 
-    } catch (err) {
-      setError('画像の解析中にエラーが発生しました。もう一度お試しください。');
+    } catch (err: any) {
       console.error(err);
+      let errorMessage = '画像の解析中にエラーが発生しました。もう一度お試しください。';
+      
+      // Check for specific error messages
+      if (err.message && (err.message.includes('403') || err.message.includes('Forbidden') || err.message.includes('PERMISSION_DENIED'))) {
+        errorMessage = 'APIキーのエラーです (403 Forbidden)。APIキーが無効か、Google Cloudの設定でAPIが有効になっていない可能性があります。';
+      } else if (err.message) {
+        errorMessage = `エラーが発生しました: ${err.message}`;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
