@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, RefreshCw, AlertCircle, X, Twitter, Sparkles, User, MapPin, Gem, LayoutList, Home } from 'lucide-react';
+import { Upload, RefreshCw, AlertCircle, X, Twitter, Sparkles, User, MapPin, Gem, LayoutList, Home, Share2 } from 'lucide-react';
 import { analyzeImage } from './services/gemini';
 import { saveAnalysisResult } from './services/storage';
 import { AnalysisResult } from './types';
@@ -103,8 +103,6 @@ const App: React.FC = () => {
       setResult(data);
 
       // Create a thumbnail and save to history
-      // We convert base64 back to file-like object to re-compress to thumbnail size
-      // Or just create a new Image from the current base64
       createThumbnailAndSave(image, data);
 
     } catch (err) {
@@ -143,10 +141,74 @@ const App: React.FC = () => {
     };
   };
 
-  const handleShare = () => {
-    if (!result) return;
-    const text = `📸 VRChat写真審査結果\n\n🏆 総合スコア: ${result.totalScore}/100\n🖼️ 作品名: ${result.title}\n\n📝 ${result.summary}\n\n#VRChat #VRChat_world #VRChatPhotography #AIPhotoCritic`;
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+  const handleShare = async () => {
+    if (!result || !image) return;
+
+    // --- 1. テキスト生成 (100文字制限) ---
+    // フォーマット:
+    // 🏆VRChat審査: {score}点
+    // 「{title}」
+    // {summary}
+    // #VRChat
+    
+    const scoreStr = `🏆VRChat審査: ${result.totalScore}点`;
+    const hashTag = "#VRChat";
+    
+    // タイトルを長すぎる場合は省略 (最大10文字程度)
+    let titleStr = result.title;
+    if (titleStr.length > 10) titleStr = titleStr.substring(0, 9) + "…";
+    const titleLine = `「${titleStr}」`;
+
+    // 固定部分の文字数を計算 (改行3つ分を含む)
+    const fixedLength = scoreStr.length + titleLine.length + hashTag.length + 3;
+    const maxSummaryLength = 100 - fixedLength;
+
+    // サマリーを制限内に収める
+    let summaryStr = result.summary.replace(/\r?\n/g, ' '); // 改行を除去
+    if (summaryStr.length > maxSummaryLength) {
+        summaryStr = summaryStr.substring(0, maxSummaryLength - 1) + "…";
+    }
+
+    const shareText = `${scoreStr}\n${titleLine}\n${summaryStr}\n${hashTag}`;
+
+    // --- 2. 画像添付とシェア ---
+    
+    // 画像データをFileオブジェクトに変換
+    let file: File | null = null;
+    try {
+        const arr = image.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        file = new File([u8arr], "vrchat-analysis.jpg", { type: mime });
+    } catch (e) {
+        console.error("Image conversion failed", e);
+    }
+
+    // Web Share API (モバイル等) で画像付きシェアを試みる
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+            await navigator.share({
+                text: shareText,
+                files: [file]
+            });
+            return; // 成功したら終了
+        } catch (err) {
+            // キャンセルされた場合は何もしない、エラーならログ
+            if ((err as Error).name !== 'AbortError') {
+                console.log("Web Share API failed, falling back to Intent");
+            } else {
+                return;
+            }
+        }
+    }
+
+    // フォールバック: Twitter Intent (画像添付不可、テキストのみ)
+    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
     window.open(url, '_blank');
   };
 
@@ -324,7 +386,7 @@ const App: React.FC = () => {
                                 <button 
                                     onClick={handleShare} 
                                     className="p-2 bg-white/5 hover:bg-[#1DA1F2]/20 hover:text-[#1DA1F2] rounded-full text-neutral-400 transition-colors border border-white/5" 
-                                    title="Xで共有"
+                                    title="X(Twitter)で結果と画像をシェア"
                                 >
                                     <Twitter className="w-5 h-5" />
                                 </button>
@@ -420,7 +482,7 @@ const App: React.FC = () => {
                                 className="w-full py-4 rounded-xl bg-[#1DA1F2] hover:bg-[#1a8cd8] text-white font-bold transition-all shadow-lg shadow-blue-500/20 active:scale-98 flex items-center justify-center gap-2"
                             >
                                 <Twitter className="w-5 h-5" />
-                                診断結果をツイート
+                                診断結果をシェア (X等)
                             </button>
 
                             <button 
